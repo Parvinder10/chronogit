@@ -1,6 +1,12 @@
 # ChronoGit — Lightweight Version Control Engine
 
-ChronoGit is a local version-control engine built from scratch in modern **C++20**. It implements Git internals—content-addressable object storage, directed acyclic commit graphs, branch heads, line-level diffing, three-way conflict reconciliation, repository integrity checks, and mark-and-sweep garbage collection—without calling or shelling out to Git.
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Parvinder10%2Fchronogit-181717?style=for-the-badge&logo=github)](https://github.com/Parvinder10/chronogit)
+[![Live Demo Visualizer](https://img.shields.io/badge/Live_Demo-ChronoGit_Interactive_Control_Center-059669?style=for-the-badge&logo=googlechrome&logoColor=white)](https://parvinder10.github.io/chronogit/)
+[![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&logo=c%2B%2B)](CMakeLists.txt)
+[![Build & Tests](https://img.shields.io/badge/Tests-20%2F20%20Passing-success?style=for-the-badge)](tests/)
+
+> 🌐 **Interactive Live Web Demo & Documentation**: **[https://parvinder10.github.io/chronogit/](https://parvinder10.github.io/chronogit/)**  
+> Explore the live commit DAG, visual Myers diffs, 3-way merge studio, and architecture walkthrough directly in your browser.
 
 ---
 

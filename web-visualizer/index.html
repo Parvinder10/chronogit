@@ -27,6 +27,82 @@
 
     const API_BASE = window.location.origin.includes(":5173") ? "" : "http://localhost:8000";
 
+    const STANDALONE_DEMO_DATA = {
+      status: {
+        branch: "main",
+        head_commit: "c381f9a2e4b019df7781bcf48d612e3a09941bd5a839e083921b7640281b37fa",
+        staged_files: ["src/core/compress.cpp", "include/chronogit/core/compress.hpp"],
+        unstaged_modified: ["README.md", "src/storage/object_db.cpp"],
+        untracked_files: ["benchmarks/custom_benchmark.log"]
+      },
+      log: {
+        current_branch: "main",
+        branches: [
+          { name: "main", target: "c381f9a2e4b019df7781bcf48d612e3a09941bd5a839e083921b7640281b37fa", is_current: true },
+          { name: "feature/calculator", target: "b59a41c7e92d04a62881fc49d0124a9e01140ad2f918e172819a6530182b26c1", is_current: false },
+          { name: "bugfix/lz77-bounds", target: "a14f82d3e09b11ca5567bdf37c891f2e98830ac4f728d091827b5420173a15b9", is_current: false }
+        ],
+        commits: [
+          {
+            id: "c381f9a2e4b019df7781bcf48d612e3a09941bd5a839e083921b7640281b37fa",
+            tree_hash: "7f89c01ab24de7129845ef01a89c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c",
+            parents: [
+              "e291a0c84b127df91924acf71892de190a417b3c8192a0192847b61928374a12",
+              "b59a41c7e92d04a62881fc49d0124a9e01140ad2f918e172819a6530182b26c1"
+            ],
+            author: "Parvinder <parvinder@users.noreply.github.com>",
+            timestamp: 1732474800,
+            message: "merge: branch 'feature/calculator' into main (3-way clean merge)"
+          },
+          {
+            id: "e291a0c84b127df91924acf71892de190a417b3c8192a0192847b61928374a12",
+            tree_hash: "5d41402abc4b2a76b9719d911017c592efcd37e912f458129846bcae19283746",
+            parents: ["a14f82d3e09b11ca5567bdf37c891f2e98830ac4f728d091827b5420173a15b9"],
+            author: "Parvinder <parvinder@users.noreply.github.com>",
+            timestamp: 1732471200,
+            message: "docs: add architecture specification and DAG traversal documentation"
+          },
+          {
+            id: "b59a41c7e92d04a62881fc49d0124a9e01140ad2f918e172819a6530182b26c1",
+            tree_hash: "3b7192847cba0192837461928374619283746192837461928374619283746192",
+            parents: ["a14f82d3e09b11ca5567bdf37c891f2e98830ac4f728d091827b5420173a15b9"],
+            author: "Parvinder <parvinder@users.noreply.github.com>",
+            timestamp: 1732467600,
+            message: "feat: implement advanced power, sqrt, and modulo operations in calculator.py"
+          },
+          {
+            id: "a14f82d3e09b11ca5567bdf37c891f2e98830ac4f728d091827b5420173a15b9",
+            tree_hash: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b",
+            parents: [],
+            author: "Parvinder <parvinder@users.noreply.github.com>",
+            timestamp: 1732464000,
+            message: "feat: initial commit with content-addressable storage engine and README"
+          }
+        ]
+      },
+      benchmarks: [
+        { "file_count": 100, "raw_uncompressed_bytes": 120315, "full_copy_bytes": 360945, "cas_storage_bytes": 64479, "deduplication_savings_pct": 82.1361, "initial_commit_ms": 268.92, "incremental_commit_ms": 57.38, "diff_ms": 8.59, "checkout_ms": 137.40, "merge_ms": 161.80, "history_traversal_ms": 5.13 },
+        { "file_count": 500, "raw_uncompressed_bytes": 609565, "full_copy_bytes": 1828695, "cas_storage_bytes": 288783, "deduplication_savings_pct": 84.2082, "initial_commit_ms": 1057.32, "incremental_commit_ms": 215.30, "diff_ms": 21.57, "checkout_ms": 917.53, "merge_ms": 953.50, "history_traversal_ms": 3.94 },
+        { "file_count": 1000, "raw_uncompressed_bytes": 1238065, "full_copy_bytes": 3714195, "cas_storage_bytes": 575315, "deduplication_savings_pct": 84.5104, "initial_commit_ms": 2047.21, "incremental_commit_ms": 430.85, "diff_ms": 30.91, "checkout_ms": 1531.63, "merge_ms": 1693.35, "history_traversal_ms": 5.94 }
+      ],
+      fsck: {
+        healthy: true,
+        output: "Checking repository integrity...\nVerified 18 objects in .chronogit/objects/.\nVerified 3 branch references (main, feature/calculator, bugfix/lz77-bounds).\nAll commit trees reachable from refs.\n0 corrupted objects, 0 dangling references.\nRepository integrity: OK (HEALTHY / CLEAN)"
+      },
+      diff: `--- a/src/core/compress.cpp
++++ b/src/core/compress.cpp
+@@ -14,6 +14,12 @@
+ namespace chronogit::core {
+
++    // Optimized window search using hash-indexed sliding window
++    uint32_t calculate_adler32(std::span<const uint8_t> buffer);
++
+     std::vector<uint8_t> compress_lz77(std::span<const uint8_t> input) {
+         if (input.empty()) return {};
++        // CAS deduplication buffer allocation
++        std::vector<uint8_t> output;`
+    };
+
     function App() {
       const getInitialTab = () => {
         const hash = window.location.hash.replace("#", "").toLowerCase();
@@ -148,6 +224,14 @@
           if (benchRes.ok) setBenchmarks(await benchRes.json());
         } catch (err) {
           setBackendOnline(false);
+          // If in standalone / GitHub Pages mode, initialize interactive demo data
+          setRepoStatus(prev => prev || STANDALONE_DEMO_DATA.status);
+          setLogData(prev => (prev && prev.commits && prev.commits.length > 0) ? prev : STANDALONE_DEMO_DATA.log);
+          setBranches(prev => (prev && prev.length > 0) ? prev : STANDALONE_DEMO_DATA.log.branches);
+          setBenchmarks(prev => (prev && prev.length > 0) ? prev : STANDALONE_DEMO_DATA.benchmarks);
+          setFsckReport(prev => prev || STANDALONE_DEMO_DATA.fsck);
+          setDiffOutput(prev => prev || STANDALONE_DEMO_DATA.diff);
+          setSelectedCommitId(prev => prev || STANDALONE_DEMO_DATA.log.commits[0].id);
         }
       }, [selectedCommitId, mergeTargetBranch]);
 
@@ -160,6 +244,15 @@
       // Actions
       const handleSetupDemo = async () => {
         setLoading(true);
+        if (!backendOnline) {
+          setLogData(STANDALONE_DEMO_DATA.log);
+          setBranches(STANDALONE_DEMO_DATA.log.branches);
+          setRepoStatus(STANDALONE_DEMO_DATA.status);
+          setSelectedCommitId(STANDALONE_DEMO_DATA.log.commits[0].id);
+          showNotice("Demo repository initialized successfully! (Standalone Live Mode)");
+          setLoading(false);
+          return;
+        }
         try {
           const res = await fetch(`${API_BASE}/api/demo/setup`, { method: "POST" });
           const json = await res.json();
@@ -174,6 +267,16 @@
 
       const handleStage = async (paths) => {
         setLoading(true);
+        if (!backendOnline) {
+          setRepoStatus(prev => ({
+            ...prev,
+            staged_files: Array.from(new Set([...(prev.staged_files || []), ...paths])),
+            unstaged_modified: (prev.unstaged_modified || []).filter(f => !paths.includes(f))
+          }));
+          showNotice(`Staged: ${paths.join(", ")} (Standalone Mode)`);
+          setLoading(false);
+          return;
+        }
         try {
           const res = await fetch(`${API_BASE}/api/stage`, {
             method: "POST",
@@ -199,6 +302,27 @@
           return;
         }
         setLoading(true);
+        if (!backendOnline) {
+          const newId = Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join("");
+          const newCommit = {
+            id: newId,
+            tree_hash: Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join(""),
+            parents: logData.commits.length > 0 ? [logData.commits[0].id] : [],
+            author: `${authorName} <${authorEmail}>`,
+            timestamp: Math.floor(Date.now() / 1000),
+            message: commitMsg.trim()
+          };
+          setLogData(prev => ({
+            ...prev,
+            commits: [newCommit, ...prev.commits]
+          }));
+          setSelectedCommitId(newId);
+          setRepoStatus(prev => ({ ...prev, staged_files: [], head_commit: newId }));
+          showNotice("Commit recorded successfully in Standalone Preview!");
+          setCommitMsg("");
+          setLoading(false);
+          return;
+        }
         try {
           const res = await fetch(`${API_BASE}/api/commit`, {
             method: "POST",
@@ -223,6 +347,15 @@
       const handleCreateBranch = async () => {
         if (!newBranchName.trim()) return;
         setLoading(true);
+        if (!backendOnline) {
+          const bname = newBranchName.trim();
+          const target = logData.commits.length > 0 ? logData.commits[0].id : "root";
+          setBranches(prev => [...prev, { name: bname, target, is_current: false }]);
+          showNotice(`Branch '${bname}' created (Standalone Mode)`);
+          setNewBranchName("");
+          setLoading(false);
+          return;
+        }
         try {
           const res = await fetch(`${API_BASE}/api/branch/create`, {
             method: "POST",
@@ -245,6 +378,14 @@
 
       const handleCheckout = async (target, createBranch = false) => {
         setLoading(true);
+        if (!backendOnline) {
+          setBranches(prev => prev.map(b => ({ ...b, is_current: b.name === target })));
+          setLogData(prev => ({ ...prev, current_branch: target }));
+          setRepoStatus(prev => ({ ...prev, branch: target }));
+          showNotice(`Switched to '${target}' (Standalone Mode)`);
+          setLoading(false);
+          return;
+        }
         try {
           const res = await fetch(`${API_BASE}/api/checkout`, {
             method: "POST",
@@ -266,6 +407,32 @@
 
       const handleMerge = async (abort = false) => {
         setLoading(true);
+        if (!backendOnline) {
+          if (abort) {
+            showNotice("Merge aborted (Standalone Mode)");
+          } else {
+            const mergeId = Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join("");
+            const headCommit = logData.commits[0];
+            const targetB = branches.find(b => b.name === mergeTargetBranch);
+            const targetCommitId = targetB ? targetB.target : headCommit.id;
+            const mergeCommit = {
+              id: mergeId,
+              tree_hash: Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join(""),
+              parents: [headCommit.id, targetCommitId],
+              author: `${authorName} <${authorEmail}>`,
+              timestamp: Math.floor(Date.now() / 1000),
+              message: `merge: branch '${mergeTargetBranch}' into ${logData.current_branch} (3-way clean merge)`
+            };
+            setLogData(prev => ({
+              ...prev,
+              commits: [mergeCommit, ...prev.commits]
+            }));
+            setSelectedCommitId(mergeId);
+            showNotice(`Clean 3-way merge completed for '${mergeTargetBranch}'! (Standalone Mode)`);
+          }
+          setLoading(false);
+          return;
+        }
         try {
           const res = await fetch(`${API_BASE}/api/merge`, {
             method: "POST",
@@ -287,6 +454,11 @@
       };
 
       const fetchDiff = async (staged) => {
+        if (!backendOnline) {
+          setDiffStaged(staged);
+          setDiffOutput(staged ? STANDALONE_DEMO_DATA.diff : `--- a/README.md\n+++ b/README.md\n@@ -1,5 +1,8 @@\n # ChronoGit Engine\n \n+## Live Control Center & Web Visualizer\n+Interactive web dashboard and visual DAG inspector.\n+\n Built with modern C++20.`);
+          return;
+        }
         try {
           const res = await fetch(`${API_BASE}/api/diff?staged=${staged}`);
           const json = await res.json();
@@ -299,6 +471,12 @@
 
       const handleRunFsck = async () => {
         setLoading(true);
+        if (!backendOnline) {
+          setFsckReport(STANDALONE_DEMO_DATA.fsck);
+          showNotice("Repository integrity check PASSED: 100% clean (Standalone Mode)");
+          setLoading(false);
+          return;
+        }
         try {
           const res = await fetch(`${API_BASE}/api/fsck`);
           const json = await res.json();
@@ -313,6 +491,11 @@
 
       const handleRunGc = async (dryRun) => {
         setLoading(true);
+        if (!backendOnline) {
+          showNotice(dryRun ? "GC dry-run: 0 unreachable objects found (Standalone Mode)" : "GC completed: 0 unreachable objects purged (Standalone Mode)");
+          setLoading(false);
+          return;
+        }
         try {
           const res = await fetch(`${API_BASE}/api/gc?dry_run=${dryRun}`, { method: "POST" });
           const json = await res.json();
@@ -328,6 +511,11 @@
       const handleSaveFile = async () => {
         if (!editFilePath.trim()) return;
         setLoading(true);
+        if (!backendOnline) {
+          showNotice(`Saved file '${editFilePath}' to working tree (Standalone Mode)`);
+          setLoading(false);
+          return;
+        }
         try {
           const res = await fetch(`${API_BASE}/api/files/write`, {
             method: "POST",
@@ -435,10 +623,20 @@
 
             {/* Backend Status & Quick Action */}
             <div className="flex items-center space-x-2.5 text-xs">
+              <a
+                href="https://github.com/Parvinder10/chronogit"
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#21262d] hover:bg-[#30363d] text-gray-300 border border-[#30363d] text-[11px] font-medium transition"
+                title="View Source on GitHub"
+              >
+                <span>⭐ GitHub Repo</span>
+              </a>
+
               <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#0d1117] border border-[#30363d]">
-                <span className={`w-2 h-2 rounded-full ${backendOnline ? "bg-emerald-400 animate-pulse" : "bg-red-500"}`}></span>
+                <span className={`w-2 h-2 rounded-full ${backendOnline ? "bg-emerald-400 animate-pulse" : "bg-amber-400 animate-pulse"}`}></span>
                 <span className="text-gray-300 font-mono text-[11px]">
-                  {backendOnline ? "Backend :8000" : "Offline"}
+                  {backendOnline ? "Live C++ :8000" : "GitHub Live Demo"}
                 </span>
               </div>
 
