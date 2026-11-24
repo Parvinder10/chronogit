@@ -1,0 +1,2 @@
+add_executable(chronogit_benchmark benchmark_suite.cpp)
+target_link_libraries(chronogit_benchmark PRIVATE chronogit_lib)

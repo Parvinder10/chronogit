@@ -1,0 +1,53 @@
+# ==========================================
+# ChronoGit - .gitignore
+# ==========================================
+
+# C++ Build outputs & binaries
+build/
+bin/
+out/
+*.exe
+*.obj
+*.o
+*.a
+*.lib
+*.dll
+*.so
+*.dylib
+*.pdb
+*.ilk
+*.idb
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.ninja
+.ninja_deps
+.ninja_log
+
+# Local test sandboxes & ChronoGit CAS storage
+.chronogit/
+demo_repo/.chronogit/
+temp_test_repo*/
+benchmark_tmp*/
+
+# Python / FastAPI
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+ENV/
+.pytest_cache/
+
+# OS / IDE metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

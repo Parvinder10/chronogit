@@ -1,0 +1,41 @@
+[
+  {
+    "file_count": 100,
+    "raw_uncompressed_bytes": 120315,
+    "full_copy_bytes": 360945,
+    "cas_storage_bytes": 64479,
+    "deduplication_savings_pct": 82.1361,
+    "initial_commit_ms": 268.924,
+    "incremental_commit_ms": 57.3848,
+    "diff_ms": 8.593,
+    "checkout_ms": 137.399,
+    "merge_ms": 161.795,
+    "history_traversal_ms": 5.1307
+  },
+  {
+    "file_count": 500,
+    "raw_uncompressed_bytes": 609565,
+    "full_copy_bytes": 1828695,
+    "cas_storage_bytes": 288783,
+    "deduplication_savings_pct": 84.2082,
+    "initial_commit_ms": 1057.32,
+    "incremental_commit_ms": 215.301,
+    "diff_ms": 21.5659,
+    "checkout_ms": 917.533,
+    "merge_ms": 953.496,
+    "history_traversal_ms": 3.9388
+  },
+  {
+    "file_count": 1000,
+    "raw_uncompressed_bytes": 1238065,
+    "full_copy_bytes": 3714195,
+    "cas_storage_bytes": 575315,
+    "deduplication_savings_pct": 84.5104,
+    "initial_commit_ms": 2047.21,
+    "incremental_commit_ms": 430.849,
+    "diff_ms": 30.9104,
+    "checkout_ms": 1531.63,
+    "merge_ms": 1693.35,
+    "history_traversal_ms": 5.9356
+  }
+]
