@@ -1,0 +1,1838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChronoGit — Local Control Center & DAG Explorer</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #0d1117; color: #c9d1d9; }
+    code, pre { font-family: 'JetBrains Mono', monospace; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0d1117; }
+    ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+  </style>
+</head>
+<body class="min-h-screen bg-[#0d1117] text-[#c9d1d9] flex flex-col">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useCallback } = React;
+
+    const API_BASE = window.location.origin.includes(":5173") ? "" : "http://localhost:8000";
+
+    const STANDALONE_DEMO_DATA = {
+      status: {
+        branch: "main",
+        head_commit: "c381f9a2e4b019df7781bcf48d612e3a09941bd5a839e083921b7640281b37fa",
+        staged_files: ["src/core/compress.cpp", "include/chronogit/core/compress.hpp"],
+        unstaged_modified: ["README.md", "src/storage/object_db.cpp"],
+        untracked_files: ["benchmarks/custom_benchmark.log"]
+      },
+      log: {
+        current_branch: "main",
+        branches: [
+          { name: "main", target: "c381f9a2e4b019df7781bcf48d612e3a09941bd5a839e083921b7640281b37fa", is_current: true },
+          { name: "feature/calculator", target: "b59a41c7e92d04a62881fc49d0124a9e01140ad2f918e172819a6530182b26c1", is_current: false },
+          { name: "bugfix/lz77-bounds", target: "a14f82d3e09b11ca5567bdf37c891f2e98830ac4f728d091827b5420173a15b9", is_current: false }
+        ],
+        commits: [
+          {
+            id: "c381f9a2e4b019df7781bcf48d612e3a09941bd5a839e083921b7640281b37fa",
+            tree_hash: "7f89c01ab24de7129845ef01a89c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c",
+            parents: [
+              "e291a0c84b127df91924acf71892de190a417b3c8192a0192847b61928374a12",
+              "b59a41c7e92d04a62881fc49d0124a9e01140ad2f918e172819a6530182b26c1"
+            ],
+            author: "Parvinder <parvinder@users.noreply.github.com>",
+            timestamp: 1732474800,
+            message: "merge: branch 'feature/calculator' into main (3-way clean merge)"
+          },
+          {
+            id: "e291a0c84b127df91924acf71892de190a417b3c8192a0192847b61928374a12",
+            tree_hash: "5d41402abc4b2a76b9719d911017c592efcd37e912f458129846bcae19283746",
+            parents: ["a14f82d3e09b11ca5567bdf37c891f2e98830ac4f728d091827b5420173a15b9"],
+            author: "Parvinder <parvinder@users.noreply.github.com>",
+            timestamp: 1732471200,
+            message: "docs: add architecture specification and DAG traversal documentation"
+          },
+          {
+            id: "b59a41c7e92d04a62881fc49d0124a9e01140ad2f918e172819a6530182b26c1",
+            tree_hash: "3b7192847cba0192837461928374619283746192837461928374619283746192",
+            parents: ["a14f82d3e09b11ca5567bdf37c891f2e98830ac4f728d091827b5420173a15b9"],
+            author: "Parvinder <parvinder@users.noreply.github.com>",
+            timestamp: 1732467600,
+            message: "feat: implement advanced power, sqrt, and modulo operations in calculator.py"
+          },
+          {
+            id: "a14f82d3e09b11ca5567bdf37c891f2e98830ac4f728d091827b5420173a15b9",
+            tree_hash: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b",
+            parents: [],
+            author: "Parvinder <parvinder@users.noreply.github.com>",
+            timestamp: 1732464000,
+            message: "feat: initial commit with content-addressable storage engine and README"
+          }
+        ]
+      },
+      benchmarks: [
+        { "file_count": 100, "raw_uncompressed_bytes": 120315, "full_copy_bytes": 360945, "cas_storage_bytes": 64479, "deduplication_savings_pct": 82.1361, "initial_commit_ms": 268.92, "incremental_commit_ms": 57.38, "diff_ms": 8.59, "checkout_ms": 137.40, "merge_ms": 161.80, "history_traversal_ms": 5.13 },
+        { "file_count": 500, "raw_uncompressed_bytes": 609565, "full_copy_bytes": 1828695, "cas_storage_bytes": 288783, "deduplication_savings_pct": 84.2082, "initial_commit_ms": 1057.32, "incremental_commit_ms": 215.30, "diff_ms": 21.57, "checkout_ms": 917.53, "merge_ms": 953.50, "history_traversal_ms": 3.94 },
+        { "file_count": 1000, "raw_uncompressed_bytes": 1238065, "full_copy_bytes": 3714195, "cas_storage_bytes": 575315, "deduplication_savings_pct": 84.5104, "initial_commit_ms": 2047.21, "incremental_commit_ms": 430.85, "diff_ms": 30.91, "checkout_ms": 1531.63, "merge_ms": 1693.35, "history_traversal_ms": 5.94 }
+      ],
+      fsck: {
+        healthy: true,
+        output: "Checking repository integrity...\nVerified 18 objects in .chronogit/objects/.\nVerified 3 branch references (main, feature/calculator, bugfix/lz77-bounds).\nAll commit trees reachable from refs.\n0 corrupted objects, 0 dangling references.\nRepository integrity: OK (HEALTHY / CLEAN)"
+      },
+      diff: `--- a/src/core/compress.cpp
++++ b/src/core/compress.cpp
+@@ -14,6 +14,12 @@
+ namespace chronogit::core {
+
++    // Optimized window search using hash-indexed sliding window
++    uint32_t calculate_adler32(std::span<const uint8_t> buffer);
++
+     std::vector<uint8_t> compress_lz77(std::span<const uint8_t> input) {
+         if (input.empty()) return {};
++        // CAS deduplication buffer allocation
++        std::vector<uint8_t> output;`
+    };
+
+    function App() {
+      const getInitialTab = () => {
+        const hash = window.location.hash.replace("#", "").toLowerCase();
+        const path = window.location.pathname.replace(/^\//, "").toLowerCase();
+        const validTabs = ["docs", "dag", "staging", "branches", "diff", "merge", "fsck", "benchmarks"];
+        if (validTabs.includes(hash)) return hash;
+        if (path === "docs" || path === "guide" || path === "demo") return "docs";
+        if (validTabs.includes(path)) return path;
+        return "docs"; // Default directly to Demo Docs & Guide
+      };
+
+      const [activeTab, setActiveTab] = useState(getInitialTab);
+      const [backendOnline, setBackendOnline] = useState(false);
+      const [loading, setLoading] = useState(false);
+      const [message, setMessage] = useState(null);
+
+      const changeTab = (tabId) => {
+        setActiveTab(tabId);
+        window.location.hash = tabId;
+        if (tabId === "diff") fetchDiff(false);
+      };
+
+      useEffect(() => {
+        const syncHash = () => {
+          const hash = window.location.hash.replace("#", "").toLowerCase();
+          const path = window.location.pathname.replace(/^\//, "").toLowerCase();
+          const validTabs = ["docs", "dag", "staging", "branches", "diff", "merge", "fsck", "benchmarks"];
+          if (validTabs.includes(hash)) {
+            setActiveTab(hash);
+          } else if (path === "docs" || path === "guide" || path === "demo") {
+            setActiveTab("docs");
+          }
+        };
+        window.addEventListener("hashchange", syncHash);
+        return () => window.removeEventListener("hashchange", syncHash);
+      }, []);
+
+      // Data States
+      const [repoStatus, setRepoStatus] = useState(null);
+      const [logData, setLogData] = useState({ commits: [], branches: [], current_branch: "main" });
+      const [branches, setBranches] = useState([]);
+      const [diffOutput, setDiffOutput] = useState("");
+      const [diffStaged, setDiffStaged] = useState(false);
+      const [fsckReport, setFsckReport] = useState(null);
+      const [benchmarks, setBenchmarks] = useState([]);
+      const [selectedCommitId, setSelectedCommitId] = useState(null);
+
+      // Form States
+      const [commitMsg, setCommitMsg] = useState("");
+      const [authorName, setAuthorName] = useState("ChronoGit Developer");
+      const [authorEmail, setAuthorEmail] = useState("dev@chronogit.local");
+      const [newBranchName, setNewBranchName] = useState("");
+      const [mergeTargetBranch, setMergeTargetBranch] = useState("");
+      const [editFilePath, setEditFilePath] = useState("notes.txt");
+      const [editFileContent, setEditFileContent] = useState("Adding some new content to ChronoGit.\nVersion: 1.0.0\n");
+
+      // Docs & API Explorer States
+      const [docsSubTab, setDocsSubTab] = useState("walkthrough"); // walkthrough, architecture, cli, api
+      const [apiTestResponse, setApiTestResponse] = useState(null);
+      const [apiTestingEndpoint, setApiTestingEndpoint] = useState(null);
+      const [demoStepStatus, setDemoStepStatus] = useState({});
+
+      const testApiEndpoint = async (method, path, body = null) => {
+        setApiTestingEndpoint(path);
+        setApiTestResponse({ loading: true, path });
+        try {
+          const opts = { method };
+          if (body) {
+            opts.headers = { "Content-Type": "application/json" };
+            opts.body = JSON.stringify(body);
+          }
+          const res = await fetch(`${API_BASE}${path}`, opts);
+          const data = await res.json();
+          setApiTestResponse({ status: res.status, data, path });
+        } catch (err) {
+          setApiTestResponse({ status: "Error", error: err.message, path });
+        } finally {
+          setApiTestingEndpoint(null);
+        }
+      };
+
+      const showNotice = (text, isError = false) => {
+        setMessage({ text, isError });
+        setTimeout(() => setMessage(null), 5000);
+      };
+
+      // API fetchers
+      const fetchAllData = useCallback(async () => {
+        try {
+          const healthRes = await fetch(`${API_BASE}/api/health`);
+          if (!healthRes.ok) throw new Error("Health check failed");
+          setBackendOnline(true);
+
+          // Parallel fetches
+          const [statusRes, logRes, branchRes, benchRes] = await Promise.all([
+            fetch(`${API_BASE}/api/status`),
+            fetch(`${API_BASE}/api/log?limit=50`),
+            fetch(`${API_BASE}/api/branches`),
+            fetch(`${API_BASE}/api/benchmarks`)
+          ]);
+
+          if (statusRes.ok) setRepoStatus(await statusRes.json());
+          if (logRes.ok) {
+            const ldata = await logRes.json();
+            setLogData(ldata);
+            if (ldata.commits.length > 0 && !selectedCommitId) {
+              setSelectedCommitId(ldata.commits[0].id);
+            }
+          }
+          if (branchRes.ok) {
+            const bdata = await branchRes.json();
+            setBranches(bdata.branches || []);
+            const cur = bdata.branches.find(b => b.is_current);
+            if (cur && !mergeTargetBranch) {
+              const other = bdata.branches.find(b => !b.is_current);
+              if (other) setMergeTargetBranch(other.name);
+            }
+          }
+          if (benchRes.ok) setBenchmarks(await benchRes.json());
+        } catch (err) {
+          setBackendOnline(false);
+          // If in standalone / GitHub Pages mode, initialize interactive demo data
+          setRepoStatus(prev => prev || STANDALONE_DEMO_DATA.status);
+          setLogData(prev => (prev && prev.commits && prev.commits.length > 0) ? prev : STANDALONE_DEMO_DATA.log);
+          setBranches(prev => (prev && prev.length > 0) ? prev : STANDALONE_DEMO_DATA.log.branches);
+          setBenchmarks(prev => (prev && prev.length > 0) ? prev : STANDALONE_DEMO_DATA.benchmarks);
+          setFsckReport(prev => prev || STANDALONE_DEMO_DATA.fsck);
+          setDiffOutput(prev => prev || STANDALONE_DEMO_DATA.diff);
+          setSelectedCommitId(prev => prev || STANDALONE_DEMO_DATA.log.commits[0].id);
+        }
+      }, [selectedCommitId, mergeTargetBranch]);
+
+      useEffect(() => {
+        fetchAllData();
+        const interval = setInterval(fetchAllData, 4000);
+        return () => clearInterval(interval);
+      }, [fetchAllData]);
+
+      // Actions
+      const handleSetupDemo = async () => {
+        setLoading(true);
+        if (!backendOnline) {
+          setLogData(STANDALONE_DEMO_DATA.log);
+          setBranches(STANDALONE_DEMO_DATA.log.branches);
+          setRepoStatus(STANDALONE_DEMO_DATA.status);
+          setSelectedCommitId(STANDALONE_DEMO_DATA.log.commits[0].id);
+          showNotice("Demo repository initialized successfully! (Standalone Live Mode)");
+          setLoading(false);
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/api/demo/setup`, { method: "POST" });
+          const json = await res.json();
+          showNotice("Demo repository initialized successfully!");
+          await fetchAllData();
+        } catch (e) {
+          showNotice(e.message, true);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleStage = async (paths) => {
+        setLoading(true);
+        if (!backendOnline) {
+          setRepoStatus(prev => ({
+            ...prev,
+            staged_files: Array.from(new Set([...(prev.staged_files || []), ...paths])),
+            unstaged_modified: (prev.unstaged_modified || []).filter(f => !paths.includes(f))
+          }));
+          showNotice(`Staged: ${paths.join(", ")} (Standalone Mode)`);
+          setLoading(false);
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/api/stage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ paths })
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Stage failed");
+          }
+          showNotice(`Staged: ${paths.join(", ")}`);
+          await fetchAllData();
+        } catch (e) {
+          showNotice(e.message, true);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleCommit = async () => {
+        if (!commitMsg.trim()) {
+          showNotice("Commit message cannot be empty", true);
+          return;
+        }
+        setLoading(true);
+        if (!backendOnline) {
+          const newId = Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join("");
+          const newCommit = {
+            id: newId,
+            tree_hash: Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join(""),
+            parents: logData.commits.length > 0 ? [logData.commits[0].id] : [],
+            author: `${authorName} <${authorEmail}>`,
+            timestamp: Math.floor(Date.now() / 1000),
+            message: commitMsg.trim()
+          };
+          setLogData(prev => ({
+            ...prev,
+            commits: [newCommit, ...prev.commits]
+          }));
+          setSelectedCommitId(newId);
+          setRepoStatus(prev => ({ ...prev, staged_files: [], head_commit: newId }));
+          showNotice("Commit recorded successfully in Standalone Preview!");
+          setCommitMsg("");
+          setLoading(false);
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/api/commit`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: commitMsg, author_name: authorName, author_email: authorEmail })
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Commit failed");
+          }
+          const json = await res.json();
+          showNotice("Commit recorded successfully: " + (json.output || ""));
+          setCommitMsg("");
+          await fetchAllData();
+        } catch (e) {
+          showNotice(e.message, true);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleCreateBranch = async () => {
+        if (!newBranchName.trim()) return;
+        setLoading(true);
+        if (!backendOnline) {
+          const bname = newBranchName.trim();
+          const target = logData.commits.length > 0 ? logData.commits[0].id : "root";
+          setBranches(prev => [...prev, { name: bname, target, is_current: false }]);
+          showNotice(`Branch '${bname}' created (Standalone Mode)`);
+          setNewBranchName("");
+          setLoading(false);
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/api/branch/create`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: newBranchName.trim() })
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Failed to create branch");
+          }
+          showNotice(`Branch '${newBranchName}' created.`);
+          setNewBranchName("");
+          await fetchAllData();
+        } catch (e) {
+          showNotice(e.message, true);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleCheckout = async (target, createBranch = false) => {
+        setLoading(true);
+        if (!backendOnline) {
+          setBranches(prev => prev.map(b => ({ ...b, is_current: b.name === target })));
+          setLogData(prev => ({ ...prev, current_branch: target }));
+          setRepoStatus(prev => ({ ...prev, branch: target }));
+          showNotice(`Switched to '${target}' (Standalone Mode)`);
+          setLoading(false);
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/api/checkout`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ target, create_branch: createBranch })
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Checkout failed");
+          }
+          showNotice(`Switched to '${target}'`);
+          await fetchAllData();
+        } catch (e) {
+          showNotice(e.message, true);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleMerge = async (abort = false) => {
+        setLoading(true);
+        if (!backendOnline) {
+          if (abort) {
+            showNotice("Merge aborted (Standalone Mode)");
+          } else {
+            const mergeId = Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join("");
+            const headCommit = logData.commits[0];
+            const targetB = branches.find(b => b.name === mergeTargetBranch);
+            const targetCommitId = targetB ? targetB.target : headCommit.id;
+            const mergeCommit = {
+              id: mergeId,
+              tree_hash: Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join(""),
+              parents: [headCommit.id, targetCommitId],
+              author: `${authorName} <${authorEmail}>`,
+              timestamp: Math.floor(Date.now() / 1000),
+              message: `merge: branch '${mergeTargetBranch}' into ${logData.current_branch} (3-way clean merge)`
+            };
+            setLogData(prev => ({
+              ...prev,
+              commits: [mergeCommit, ...prev.commits]
+            }));
+            setSelectedCommitId(mergeId);
+            showNotice(`Clean 3-way merge completed for '${mergeTargetBranch}'! (Standalone Mode)`);
+          }
+          setLoading(false);
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/api/merge`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ branch: mergeTargetBranch, abort })
+          });
+          const json = await res.json();
+          if (json.status === "conflict") {
+            showNotice("Conflict detected during 3-way merge! Resolve conflicts in files and commit.", true);
+          } else {
+            showNotice("Merge completed: " + (json.output || "clean"));
+          }
+          await fetchAllData();
+        } catch (e) {
+          showNotice(e.message, true);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const fetchDiff = async (staged) => {
+        if (!backendOnline) {
+          setDiffStaged(staged);
+          setDiffOutput(staged ? STANDALONE_DEMO_DATA.diff : `--- a/README.md\n+++ b/README.md\n@@ -1,5 +1,8 @@\n # ChronoGit Engine\n \n+## Live Control Center & Web Visualizer\n+Interactive web dashboard and visual DAG inspector.\n+\n Built with modern C++20.`);
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/api/diff?staged=${staged}`);
+          const json = await res.json();
+          setDiffOutput(json.diff || "No differences detected.");
+          setDiffStaged(staged);
+        } catch (e) {
+          setDiffOutput("Error fetching diff: " + e.message);
+        }
+      };
+
+      const handleRunFsck = async () => {
+        setLoading(true);
+        if (!backendOnline) {
+          setFsckReport(STANDALONE_DEMO_DATA.fsck);
+          showNotice("Repository integrity check PASSED: 100% clean (Standalone Mode)");
+          setLoading(false);
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/api/fsck`);
+          const json = await res.json();
+          setFsckReport(json);
+          showNotice(json.healthy ? "Repository integrity check PASSED: 100% clean." : "Integrity issues found!", !json.healthy);
+        } catch (e) {
+          showNotice(e.message, true);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleRunGc = async (dryRun) => {
+        setLoading(true);
+        if (!backendOnline) {
+          showNotice(dryRun ? "GC dry-run: 0 unreachable objects found (Standalone Mode)" : "GC completed: 0 unreachable objects purged (Standalone Mode)");
+          setLoading(false);
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/api/gc?dry_run=${dryRun}`, { method: "POST" });
+          const json = await res.json();
+          showNotice(json.output || "GC completed.");
+          await fetchAllData();
+        } catch (e) {
+          showNotice(e.message, true);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleSaveFile = async () => {
+        if (!editFilePath.trim()) return;
+        setLoading(true);
+        if (!backendOnline) {
+          showNotice(`Saved file '${editFilePath}' to working tree (Standalone Mode)`);
+          setLoading(false);
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/api/files/write`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: editFilePath.trim(), content: editFileContent })
+          });
+          showNotice(`Saved file '${editFilePath}' to working tree.`);
+          await fetchAllData();
+        } catch (e) {
+          showNotice(e.message, true);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // Layout DAG nodes into columns / lanes
+      const { nodes, edges } = useMemo(() => {
+        if (!logData.commits || logData.commits.length === 0) return { nodes: [], edges: [] };
+
+        const sorted = [...logData.commits].reverse(); // oldest first for DAG layout
+        const nodePositions = new Map();
+
+        sorted.forEach((commit, index) => {
+          let assignedLane = 0;
+          if (commit.parents && commit.parents.length > 0) {
+            const firstParentPos = nodePositions.get(commit.parents[0]);
+            if (firstParentPos) assignedLane = firstParentPos.lane;
+          }
+          if (commit.parents && commit.parents.length > 1) {
+            assignedLane = 0; // Merges merge into mainline
+          }
+
+          const x = 80 + index * 130;
+          const y = 80 + assignedLane * 75;
+          nodePositions.set(commit.id, { x, y, lane: assignedLane, commit });
+        });
+
+        const computedEdges = [];
+        sorted.forEach(commit => {
+          const toPos = nodePositions.get(commit.id);
+          if (commit.parents) {
+            commit.parents.forEach((parentId, pIdx) => {
+              const fromPos = nodePositions.get(parentId);
+              if (fromPos && toPos) {
+                computedEdges.push({
+                  from: fromPos,
+                  to: toPos,
+                  isMerge: pIdx > 0
+                });
+              }
+            });
+          }
+        });
+
+        return { nodes: Array.from(nodePositions.values()), edges: computedEdges };
+      }, [logData]);
+
+      const selectedCommit = useMemo(() => {
+        if (!logData.commits) return null;
+        return logData.commits.find(c => c.id === selectedCommitId) || logData.commits[0];
+      }, [logData, selectedCommitId]);
+
+      return (
+        <div className="flex flex-col h-screen overflow-hidden">
+          {/* Top Bar */}
+          <header className="bg-[#161b22] border-b border-[#30363d] px-6 py-3.5 flex items-center justify-between shrink-0">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">
+                CG
+              </div>
+              <div>
+                <h1 className="text-base font-bold text-white flex items-center gap-2">
+                  ChronoGit <span className="text-xs px-2 py-0.5 rounded bg-indigo-900/60 text-indigo-300 border border-indigo-700/50 font-normal">v1.0 C++20 Core</span>
+                </h1>
+                <p className="text-[11px] text-gray-400">Content-Addressable Local Version Control Engine</p>
+              </div>
+            </div>
+
+            {/* Navigation Tabs */}
+            <div className="flex items-center space-x-1 bg-[#0d1117] p-1 rounded-lg border border-[#30363d] overflow-x-auto max-w-2xl scrollbar-none">
+              {[
+                { id: "docs", label: "Demo Docs & Guide", icon: "📖", highlight: true },
+                { id: "dag", label: "Commit DAG", icon: "🔀" },
+                { id: "staging", label: "Staging & Worktree", icon: "📝" },
+                { id: "branches", label: "Branches", icon: "🌿" },
+                { id: "diff", label: "Diff Engine", icon: "🔍" },
+                { id: "merge", label: "3-Way Merge", icon: "⚡" },
+                { id: "fsck", label: "Integrity (fsck/gc)", icon: "🛡️" },
+                { id: "benchmarks", label: "Benchmarks", icon: "📊" },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => changeTab(tab.id)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 whitespace-nowrap ${
+                    activeTab === tab.id
+                      ? tab.highlight ? "bg-amber-500 text-black font-bold shadow" : "bg-[#21262d] text-white shadow"
+                      : tab.highlight ? "text-amber-300 hover:text-amber-200 bg-amber-950/30 border border-amber-500/30 font-semibold" : "text-gray-400 hover:text-gray-200"
+                  }`}
+                >
+                  <span>{tab.icon}</span>
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Backend Status & Quick Action */}
+            <div className="flex items-center space-x-2.5 text-xs">
+              <a
+                href="https://github.com/Parvinder10/chronogit"
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#21262d] hover:bg-[#30363d] text-gray-300 border border-[#30363d] text-[11px] font-medium transition"
+                title="View Source on GitHub"
+              >
+                <span>⭐ GitHub Repo</span>
+              </a>
+
+              <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#0d1117] border border-[#30363d]">
+                <span className={`w-2 h-2 rounded-full ${backendOnline ? "bg-emerald-400 animate-pulse" : "bg-amber-400 animate-pulse"}`}></span>
+                <span className="text-gray-300 font-mono text-[11px]">
+                  {backendOnline ? "Live C++ :8000" : "GitHub Live Demo"}
+                </span>
+              </div>
+
+              <button
+                onClick={() => changeTab("docs")}
+                className={`px-3 py-1.5 rounded-md font-semibold transition text-xs shadow flex items-center gap-1.5 ${
+                  activeTab === "docs"
+                    ? "bg-amber-500 text-black ring-2 ring-amber-300 shadow-amber-500/20 font-bold"
+                    : "bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40"
+                }`}
+                title="Open Demo Docs and Guided Walkthrough"
+              >
+                <span>📖 Demo Docs</span>
+              </button>
+
+              <button
+                onClick={handleSetupDemo}
+                disabled={loading}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md font-medium transition text-xs shadow flex items-center gap-1.5"
+              >
+                <span>⚡ Demo Repo Setup</span>
+              </button>
+            </div>
+          </header>
+
+          {/* Top Demo Docs Quick Access Banner */}
+          <div className="bg-gradient-to-r from-amber-950/40 via-indigo-950/60 to-[#161b22] border-b border-indigo-700/30 px-6 py-2 flex items-center justify-between text-xs shrink-0">
+            <div className="flex items-center space-x-2 text-indigo-200">
+              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-[10px] uppercase tracking-wider">Demo Docs</span>
+              <span className="text-gray-300 font-medium">Looking for interactive step-by-step walkthrough, C++ architecture, or CLI references?</span>
+            </div>
+            <button
+              onClick={() => changeTab("docs")}
+              className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1.5 hover:underline"
+            >
+              <span>{activeTab === "docs" ? "Currently viewing Demo Docs & Guide" : "Open Demo Docs & Walkthrough →"}</span>
+            </button>
+          </div>
+
+          {/* Alert Notification */}
+          {message && (
+            <div className={`px-6 py-2 text-xs font-medium border-b flex items-center justify-between ${
+              message.isError ? "bg-red-950/70 border-red-800 text-red-200" : "bg-emerald-950/70 border-emerald-800 text-emerald-200"
+            }`}>
+              <span>{message.text}</span>
+              <button onClick={() => setMessage(null)} className="text-gray-400 hover:text-white">&times;</button>
+            </div>
+          )}
+
+          {/* Content Area */}
+          <main className="flex-1 overflow-hidden flex bg-[#0d1117]">
+            {/* TAB 1: COMMIT DAG GRAPH */}
+            {activeTab === "dag" && (
+              <div className="flex-1 flex overflow-hidden">
+                <div className="flex-1 flex flex-col overflow-hidden relative">
+                  <div className="p-3 bg-[#161b22]/70 border-b border-[#30363d] flex items-center justify-between text-xs text-gray-400">
+                    <div className="flex items-center gap-4">
+                      <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Mainline</span>
+                      <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span> Feature Lane</span>
+                      <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span> 3-Way Merge Node</span>
+                    </div>
+                    <div>Click any commit node to inspect details in the right pane.</div>
+                  </div>
+
+                  <div className="flex-1 p-6 overflow-auto flex items-center justify-center">
+                    {nodes.length === 0 ? (
+                      <div className="text-center text-gray-500 space-y-4">
+                        <p className="text-sm">No commits in current repository yet.</p>
+                        <div className="flex items-center justify-center gap-3">
+                          <button onClick={handleSetupDemo} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-xs font-semibold shadow">
+                            ⚡ Initialize Sample Project & Commits
+                          </button>
+                          <button onClick={() => changeTab("docs")} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black rounded-md text-xs font-bold shadow">
+                            📖 Open Demo Docs & Interactive Walkthrough
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <svg width={Math.max(900, nodes.length * 150 + 100)} height={320} className="overflow-visible">
+                        <defs>
+                          <marker id="arrow" viewBox="0 0 10 10" refX="20" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 1 L 10 5 L 0 9 z" fill="#484f58" />
+                          </marker>
+                          <marker id="arrow-merge" viewBox="0 0 10 10" refX="20" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 1 L 10 5 L 0 9 z" fill="#a855f7" />
+                          </marker>
+                        </defs>
+
+                        {/* Edges */}
+                        {edges.map((e, idx) => {
+                          const isMerge = e.isMerge;
+                          const dx = e.to.x - e.from.x;
+                          const pathD = `M ${e.from.x} ${e.from.y} C ${e.from.x + dx/2} ${e.from.y}, ${e.to.x - dx/2} ${e.to.y}, ${e.to.x} ${e.to.y}`;
+                          const isHighlighted = selectedCommit && (selectedCommit.id === e.to.commit.id || (selectedCommit.parents && selectedCommit.parents.includes(e.from.commit.id)));
+                          return (
+                            <path
+                              key={`edge-${idx}`}
+                              d={pathD}
+                              fill="none"
+                              stroke={isMerge ? "#a855f7" : "#3b82f6"}
+                              strokeWidth={isHighlighted ? 3 : 2}
+                              strokeDasharray={isMerge ? "4 2" : "none"}
+                              opacity={isHighlighted ? 1 : 0.6}
+                              markerEnd={isMerge ? "url(#arrow-merge)" : "url(#arrow)"}
+                            />
+                          );
+                        })}
+
+                        {/* Nodes */}
+                        {nodes.map(node => {
+                          const isSelected = selectedCommitId === node.commit.id;
+                          const isMerge = node.commit.parents && node.commit.parents.length > 1;
+                          let color = node.lane === 0 ? "#10b981" : "#6366f1";
+                          if (isMerge) color = "#a855f7";
+
+                          return (
+                            <g key={node.commit.id} className="cursor-pointer" onClick={() => setSelectedCommitId(node.commit.id)}>
+                              {isSelected && (
+                                <circle cx={node.x} cy={node.y} r={18} fill="none" stroke={color} strokeWidth={2} opacity={0.6} className="animate-pulse" />
+                              )}
+                              <circle
+                                cx={node.x}
+                                cy={node.y}
+                                r={12}
+                                fill={isSelected ? "#ffffff" : color}
+                                stroke={color}
+                                strokeWidth={isSelected ? 4 : 2}
+                              />
+                              <text
+                                x={node.x}
+                                y={node.y + 26}
+                                textAnchor="middle"
+                                fill={isSelected ? "#ffffff" : "#8b949e"}
+                                fontSize={11}
+                                fontFamily="JetBrains Mono"
+                                fontWeight={isSelected ? "bold" : "normal"}
+                              >
+                                {node.commit.id.substr(0, 7)}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Inspector */}
+                <div className="w-96 border-l border-[#30363d] bg-[#161b22] flex flex-col p-5 overflow-y-auto space-y-4">
+                  <h3 className="text-sm font-bold text-white border-b border-[#30363d] pb-2 flex items-center justify-between">
+                    <span>Commit Details</span>
+                    {selectedCommit && (
+                      <span className="text-xs px-2 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-mono">
+                        {selectedCommit.id.substr(0, 7)}
+                      </span>
+                    )}
+                  </h3>
+
+                  {selectedCommit ? (
+                    <>
+                      <div>
+                        <label className="text-gray-400 text-xs block mb-1">Commit Message</label>
+                        <div className="p-3 bg-[#0d1117] rounded-md border border-[#30363d] text-white text-xs font-medium">
+                          {selectedCommit.message}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="p-2.5 bg-[#0d1117] rounded-md border border-[#30363d]">
+                          <span className="text-gray-400 block text-[10px]">Author</span>
+                          <span className="text-gray-200 font-semibold">{selectedCommit.author}</span>
+                        </div>
+                        <div className="p-2.5 bg-[#0d1117] rounded-md border border-[#30363d]">
+                          <span className="text-gray-400 block text-[10px]">Date</span>
+                          <span className="text-gray-300 font-mono">{new Date(selectedCommit.timestamp * 1000).toLocaleTimeString()}</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-gray-400 text-xs block mb-1">SHA-256 Object Address</label>
+                        <div className="p-2 bg-[#0d1117] rounded-md border border-[#30363d] font-mono text-[10px] break-all text-indigo-300">
+                          {selectedCommit.id}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-gray-400 text-xs block mb-1">Root Tree Hash</label>
+                        <div className="p-2 bg-[#0d1117] rounded-md border border-[#30363d] font-mono text-[10px] break-all text-emerald-300">
+                          {selectedCommit.tree_id}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-gray-400 text-xs block mb-1">Parent Commits</label>
+                        {selectedCommit.parents && selectedCommit.parents.length > 0 ? (
+                          <div className="space-y-1">
+                            {selectedCommit.parents.map((p, idx) => (
+                              <button
+                                key={p}
+                                onClick={() => setSelectedCommitId(p)}
+                                className="w-full text-left p-2 bg-[#0d1117] hover:bg-[#21262d] rounded border border-[#30363d] font-mono text-[10px] text-blue-400 flex items-center justify-between"
+                              >
+                                <span>Parent #{idx + 1}: {p.substr(0, 12)}...</span>
+                                <span>&rarr;</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-2 bg-[#0d1117] text-gray-500 rounded border border-[#30363d] text-xs italic">
+                            Initial Root Commit (0 parents)
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-gray-500 italic text-xs">Select a commit to view details</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: STAGING & WORKTREE */}
+            {activeTab === "staging" && (
+              <div className="flex-1 flex overflow-hidden p-6 gap-6">
+                {/* Left: Working Tree Status */}
+                <div className="flex-1 flex flex-col bg-[#161b22] border border-[#30363d] rounded-lg p-5 overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-[#30363d] pb-3 mb-4">
+                    <div>
+                      <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                        <span>Workspace Status</span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 font-mono">
+                          branch: {repoStatus?.branch || "main"}
+                        </span>
+                      </h2>
+                    </div>
+
+                    <button
+                      onClick={() => handleStage(["."])}
+                      disabled={loading}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold transition"
+                    >
+                      Stage All Changes (chronogit add .)
+                    </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto space-y-4 text-xs">
+                    {/* Staged files */}
+                    <div>
+                      <h3 className="text-emerald-400 font-bold mb-2 flex items-center gap-1.5">
+                        <span>✓ Changes to be committed (Staged)</span>
+                        <span className="text-[10px] bg-emerald-900/40 px-1.5 py-0.2 rounded border border-emerald-700/50">
+                          {repoStatus?.staged?.length || 0}
+                        </span>
+                      </h3>
+                      {repoStatus?.staged?.length > 0 ? (
+                        <div className="space-y-1">
+                          {repoStatus.staged.map((f, i) => (
+                            <div key={i} className="p-2 bg-[#0d1117] rounded border border-emerald-900/40 flex justify-between items-center font-mono">
+                              <span className="text-emerald-300">{f.type}: {f.path}</span>
+                              <span className="text-gray-500 text-[10px]">Ready to commit</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-gray-500 italic p-2 bg-[#0d1117] rounded border border-[#30363d]">No staged changes.</div>
+                      )}
+                    </div>
+
+                    {/* Unstaged modified */}
+                    <div>
+                      <h3 className="text-yellow-400 font-bold mb-2 flex items-center gap-1.5">
+                        <span>⚠ Changes not staged for commit</span>
+                        <span className="text-[10px] bg-yellow-900/40 px-1.5 py-0.2 rounded border border-yellow-700/50">
+                          {repoStatus?.unstaged?.length || 0}
+                        </span>
+                      </h3>
+                      {repoStatus?.unstaged?.length > 0 ? (
+                        <div className="space-y-1">
+                          {repoStatus.unstaged.map((f, i) => (
+                            <div key={i} className="p-2 bg-[#0d1117] rounded border border-yellow-900/40 flex justify-between items-center font-mono">
+                              <span className="text-yellow-300">{f.type}: {f.path}</span>
+                              <button onClick={() => handleStage([f.path])} className="px-2 py-0.5 bg-yellow-600 hover:bg-yellow-500 text-black font-semibold rounded text-[10px]">
+                                Stage
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-gray-500 italic p-2 bg-[#0d1117] rounded border border-[#30363d]">No unstaged modifications.</div>
+                      )}
+                    </div>
+
+                    {/* Untracked files */}
+                    <div>
+                      <h3 className="text-red-400 font-bold mb-2 flex items-center gap-1.5">
+                        <span>? Untracked files</span>
+                        <span className="text-[10px] bg-red-900/40 px-1.5 py-0.2 rounded border border-red-700/50">
+                          {repoStatus?.untracked?.length || 0}
+                        </span>
+                      </h3>
+                      {repoStatus?.untracked?.length > 0 ? (
+                        <div className="space-y-1">
+                          {repoStatus.untracked.map((f, i) => (
+                            <div key={i} className="p-2 bg-[#0d1117] rounded border border-red-900/40 flex justify-between items-center font-mono">
+                              <span className="text-red-300">{f}</span>
+                              <button onClick={() => handleStage([f])} className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-[10px]">
+                                Add
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-gray-500 italic p-2 bg-[#0d1117] rounded border border-[#30363d]">No untracked files.</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: Commit & File Creator */}
+                <div className="w-96 flex flex-col space-y-5">
+                  {/* Commit Box */}
+                  <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5 space-y-3">
+                    <h3 className="text-sm font-bold text-white border-b border-[#30363d] pb-2">Record Commit</h3>
+
+                    <div>
+                      <label className="text-gray-400 text-xs block mb-1">Commit Message</label>
+                      <textarea
+                        value={commitMsg}
+                        onChange={e => setCommitMsg(e.target.value)}
+                        placeholder="feat: describe changes in snapshot..."
+                        rows={3}
+                        className="w-full bg-[#0d1117] border border-[#30363d] rounded p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <label className="text-gray-400 block mb-1">Author Name</label>
+                        <input
+                          type="text"
+                          value={authorName}
+                          onChange={e => setAuthorName(e.target.value)}
+                          className="w-full bg-[#0d1117] border border-[#30363d] rounded p-1.5 text-xs text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-gray-400 block mb-1">Author Email</label>
+                        <input
+                          type="text"
+                          value={authorEmail}
+                          onChange={e => setAuthorEmail(e.target.value)}
+                          className="w-full bg-[#0d1117] border border-[#30363d] rounded p-1.5 text-xs text-white"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleCommit}
+                      disabled={loading || !commitMsg.trim()}
+                      className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold rounded text-xs transition"
+                    >
+                      Commit to {repoStatus?.branch || "main"}
+                    </button>
+                  </div>
+
+                  {/* Create / Edit File in Workspace */}
+                  <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5 space-y-3 flex-1 flex flex-col">
+                    <h3 className="text-sm font-bold text-white border-b border-[#30363d] pb-2">Edit Working Tree File</h3>
+
+                    <div>
+                      <label className="text-gray-400 text-xs block mb-1">File Path</label>
+                      <input
+                        type="text"
+                        value={editFilePath}
+                        onChange={e => setEditFilePath(e.target.value)}
+                        className="w-full bg-[#0d1117] border border-[#30363d] rounded p-1.5 text-xs text-white font-mono"
+                      />
+                    </div>
+
+                    <div className="flex-1 flex flex-col">
+                      <label className="text-gray-400 text-xs block mb-1">Content</label>
+                      <textarea
+                        value={editFileContent}
+                        onChange={e => setEditFileContent(e.target.value)}
+                        rows={5}
+                        className="w-full flex-1 bg-[#0d1117] border border-[#30363d] rounded p-2 text-xs text-white font-mono focus:outline-none"
+                      />
+                    </div>
+
+                    <button
+                      onClick={handleSaveFile}
+                      disabled={loading}
+                      className="w-full py-1.5 bg-[#21262d] hover:bg-[#30363d] text-gray-200 border border-[#30363d] rounded text-xs font-medium transition"
+                    >
+                      Write File to Disk
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: BRANCHES */}
+            {activeTab === "branches" && (
+              <div className="flex-1 p-8 max-w-4xl mx-auto space-y-6 overflow-y-auto">
+                <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5 space-y-4">
+                  <h2 className="text-sm font-bold text-white border-b border-[#30363d] pb-3 flex items-center justify-between">
+                    <span>Repository Branches</span>
+                    <span className="text-xs text-gray-400">{branches.length} branches</span>
+                  </h2>
+
+                  {/* Branch List */}
+                  <div className="space-y-2">
+                    {branches.map(b => (
+                      <div
+                        key={b.name}
+                        className={`p-3 rounded-md border flex items-center justify-between text-xs ${
+                          b.is_current ? "bg-emerald-950/30 border-emerald-800/60" : "bg-[#0d1117] border-[#30363d]"
+                        }`}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <span className={`w-2.5 h-2.5 rounded-full ${b.is_current ? "bg-emerald-400" : "bg-gray-500"}`}></span>
+                          <span className="font-mono font-semibold text-white">{b.name}</span>
+                          {b.is_current && (
+                            <span className="px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 text-[10px] font-bold">
+                              CURRENT ACTIVE
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          {!b.is_current && (
+                            <>
+                              <button
+                                onClick={() => handleCheckout(b.name)}
+                                className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs transition"
+                              >
+                                Switch to Branch
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  if (confirm(`Delete branch '${b.name}'?`)) {
+                                    const res = await fetch(`${API_BASE}/api/branch/delete`, {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ name: b.name })
+                                    });
+                                    fetchAllData();
+                                  }
+                                }}
+                                className="px-2 py-1 bg-red-950/60 hover:bg-red-800 text-red-300 rounded text-xs transition"
+                              >
+                                Delete
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Create Branch */}
+                  <div className="pt-4 border-t border-[#30363d] flex gap-3 items-center">
+                    <input
+                      type="text"
+                      placeholder="New branch name (e.g. feature/auth)..."
+                      value={newBranchName}
+                      onChange={e => setNewBranchName(e.target.value)}
+                      className="flex-1 bg-[#0d1117] border border-[#30363d] rounded p-2 text-xs text-white"
+                    />
+                    <button
+                      onClick={handleCreateBranch}
+                      disabled={!newBranchName.trim()}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded text-xs font-medium"
+                    >
+                      Create Branch
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: DIFF ENGINE */}
+            {activeTab === "diff" && (
+              <div className="flex-1 flex flex-col p-6 space-y-4 overflow-hidden">
+                <div className="flex items-center justify-between bg-[#161b22] p-3 rounded-lg border border-[#30363d]">
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => fetchDiff(false)}
+                      className={`px-3 py-1.5 rounded text-xs font-semibold ${
+                        !diffStaged ? "bg-indigo-600 text-white" : "bg-[#21262d] text-gray-300"
+                      }`}
+                    >
+                      Unstaged (Worktree vs Index)
+                    </button>
+                    <button
+                      onClick={() => fetchDiff(true)}
+                      className={`px-3 py-1.5 rounded text-xs font-semibold ${
+                        diffStaged ? "bg-indigo-600 text-white" : "bg-[#21262d] text-gray-300"
+                      }`}
+                    >
+                      Staged (Index vs HEAD)
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => fetchDiff(diffStaged)}
+                    className="px-3 py-1 bg-[#21262d] hover:bg-[#30363d] text-xs text-gray-300 rounded border border-[#30363d]"
+                  >
+                    🔄 Refresh Diff
+                  </button>
+                </div>
+
+                <div className="flex-1 bg-[#0d1117] border border-[#30363d] rounded-lg p-4 overflow-auto font-mono text-xs">
+                  {diffOutput ? (
+                    diffOutput.split("\n").map((line, i) => {
+                      let color = "text-gray-300";
+                      let bg = "transparent";
+                      if (line.startsWith("+")) {
+                        color = "text-emerald-400";
+                        bg = "bg-emerald-950/20";
+                      } else if (line.startsWith("-")) {
+                        color = "text-red-400";
+                        bg = "bg-red-950/20";
+                      } else if (line.startsWith("@@")) {
+                        color = "text-indigo-400";
+                        bg = "bg-indigo-950/30";
+                      } else if (line.startsWith("diff --chronogit")) {
+                        color = "text-white font-bold";
+                      }
+
+                      return (
+                        <div key={i} className={`${color} ${bg} px-1.5 py-0.5 rounded leading-relaxed`}>
+                          {line}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-gray-500 italic">No diff output available.</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 5: 3-WAY MERGE STUDIO */}
+            {activeTab === "merge" && (
+              <div className="flex-1 p-8 max-w-4xl mx-auto space-y-6 overflow-y-auto">
+                <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-6 space-y-5">
+                  <div className="border-b border-[#30363d] pb-3">
+                    <h2 className="text-base font-bold text-white flex items-center gap-2">
+                      <span>3-Way Merge Studio</span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-purple-900/60 text-purple-300 font-mono">
+                        Target &rarr; Current: {logData.current_branch || "main"}
+                      </span>
+                    </h2>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Computes the Lowest Common Ancestor (LCA) in the commit DAG and performs line-level 3-way reconciliation.
+                    </p>
+                  </div>
+
+                  <div className="space-y-4 text-xs">
+                    <div>
+                      <label className="text-gray-300 font-semibold block mb-1">Select Branch to Merge Into '{logData.current_branch || "main"}':</label>
+                      <select
+                        value={mergeTargetBranch}
+                        onChange={e => setMergeTargetBranch(e.target.value)}
+                        className="w-full bg-[#0d1117] border border-[#30363d] rounded p-2.5 text-xs text-white"
+                      >
+                        <option value="">-- Choose branch --</option>
+                        {branches.filter(b => !b.is_current).map(b => (
+                          <option key={b.name} value={b.name}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex space-x-3 pt-2">
+                      <button
+                        onClick={() => handleMerge(false)}
+                        disabled={loading || !mergeTargetBranch}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-semibold rounded text-xs transition"
+                      >
+                        Execute 3-Way Merge
+                      </button>
+
+                      <button
+                        onClick={() => handleMerge(true)}
+                        disabled={loading}
+                        className="px-3 py-2 bg-red-950/50 hover:bg-red-800 text-red-300 border border-red-800 rounded text-xs transition"
+                      >
+                        Abort Merge (--abort)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 6: INTEGRITY & FSCK / GC */}
+            {activeTab === "fsck" && (
+              <div className="flex-1 p-8 max-w-4xl mx-auto space-y-6 overflow-y-auto">
+                <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-6 space-y-5">
+                  <div className="border-b border-[#30363d] pb-3 flex items-center justify-between">
+                    <div>
+                      <h2 className="text-base font-bold text-white">Repository Integrity & Storage Maintenance</h2>
+                      <p className="text-xs text-gray-400 mt-1">Verifies object SHA-256 checksums, DAG connectivity, and garbage collection.</p>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={handleRunFsck}
+                        disabled={loading}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-semibold transition"
+                      >
+                        Run FSCK Check
+                      </button>
+                    </div>
+                  </div>
+
+                  {fsckReport && (
+                    <div className="p-4 bg-[#0d1117] border border-[#30363d] rounded-md space-y-3 text-xs">
+                      <div className="flex items-center justify-between font-mono">
+                        <span className="text-gray-300 font-bold">Integrity Status:</span>
+                        <span className={`px-2 py-0.5 rounded font-bold ${fsckReport.healthy ? "bg-emerald-950 text-emerald-300 border border-emerald-800" : "bg-red-950 text-red-300 border border-red-800"}`}>
+                          {fsckReport.healthy ? "HEALTHY / CLEAN" : "CORRUPTION DETECTED"}
+                        </span>
+                      </div>
+                      <pre className="text-gray-400 whitespace-pre-wrap font-mono text-[11px] bg-black/40 p-3 rounded">
+                        {fsckReport.output}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Garbage Collection Box */}
+                  <div className="pt-4 border-t border-[#30363d] space-y-3">
+                    <h3 className="text-xs font-bold text-white uppercase tracking-wider text-gray-300">Garbage Collector (Mark-and-Sweep)</h3>
+                    <p className="text-xs text-gray-400">Scans all commits, trees, and blobs reachable from branches and HEAD; safely purges unreferenced objects.</p>
+
+                    <div className="flex space-x-3">
+                      <button
+                        onClick={() => handleRunGc(true)}
+                        disabled={loading}
+                        className="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-gray-200 border border-[#30363d] rounded text-xs font-medium"
+                      >
+                        Dry Run (--dry-run)
+                      </button>
+                      <button
+                        onClick={() => handleRunGc(false)}
+                        disabled={loading}
+                        className="px-3 py-1.5 bg-red-900/60 hover:bg-red-800 text-red-200 border border-red-700 rounded text-xs font-medium"
+                      >
+                        Run GC Purge
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 8: DEMO DOCS & INTERACTIVE GUIDE */}
+            {activeTab === "docs" && (
+              <div className="flex-1 p-8 max-w-6xl mx-auto space-y-6 overflow-y-auto">
+                <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-6 space-y-6">
+                  {/* Docs Header */}
+                  <div className="border-b border-[#30363d] pb-4 flex items-center justify-between">
+                    <div>
+                      <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                        <span>📖 ChronoGit Documentation & Interactive Demo Guide</span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-mono">Local Live :5173</span>
+                      </h2>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Comprehensive architecture documentation, live guided workflows, CLI reference, and interactive API console.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center space-x-3">
+                      {/* Docs Sub-tabs */}
+                      <div className="flex bg-[#0d1117] p-1 rounded-lg border border-[#30363d] text-xs">
+                        {[
+                          { id: "walkthrough", label: "🎯 Guided Demo Walkthrough" },
+                          { id: "architecture", label: "🏗️ Engine Architecture" },
+                          { id: "cli", label: "💻 CLI Cheat Sheet" },
+                          { id: "api", label: "🔌 Live API Explorer" },
+                        ].map(st => (
+                          <button
+                            key={st.id}
+                            onClick={() => setDocsSubTab(st.id)}
+                            className={`px-3 py-1.5 rounded-md font-medium transition ${
+                              docsSubTab === st.id ? "bg-[#21262d] text-white shadow font-semibold" : "text-gray-400 hover:text-gray-200"
+                            }`}
+                          >
+                            {st.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={() => changeTab("dag")}
+                        className="px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
+                      >
+                        <span>🔀 Switch to Commit DAG</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* SUBTAB 1: GUIDED DEMO WALKTHROUGH */}
+                  {docsSubTab === "walkthrough" && (
+                    <div className="space-y-6 text-xs">
+                      <div className="p-4 bg-indigo-950/30 border border-indigo-800/40 rounded-lg text-indigo-200 flex items-start gap-3">
+                        <span className="text-xl">💡</span>
+                        <div>
+                          <h4 className="font-bold text-sm text-white mb-1">Interactive End-to-End Tour</h4>
+                          <p className="text-gray-300 leading-relaxed">
+                            Click the <strong>Run Step</strong> buttons below to execute real version control commands on the C++20 ChronoGit engine. You can watch the <strong>Commit DAG</strong> and <strong>Staging Area</strong> update live in real-time!
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        {/* Step 1 */}
+                        <div className="p-4 bg-[#0d1117] border border-[#30363d] rounded-lg space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-xs">1</span>
+                              <h4 className="font-bold text-white text-sm">Initialize Repository & Core Snapshots</h4>
+                            </div>
+                            <button
+                              onClick={async () => {
+                                setDemoStepStatus(s => ({ ...s, step1: "running" }));
+                                await handleSetupDemo();
+                                setDemoStepStatus(s => ({ ...s, step1: "done" }));
+                              }}
+                              disabled={loading}
+                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded text-xs transition"
+                            >
+                              {demoStepStatus.step1 === "done" ? "✓ Re-run Step 1" : "Run Step 1 (Init Demo)"}
+                            </button>
+                          </div>
+                          <p className="text-gray-400">
+                            Initializes empty repository (<code>chronogit init -b main</code>), writes <code>README.md</code> and <code>calculator.py</code>, stages with <code>chronogit add .</code>, and records the initial commit.
+                          </p>
+                        </div>
+
+                        {/* Step 2 */}
+                        <div className="p-4 bg-[#0d1117] border border-[#30363d] rounded-lg space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-xs">2</span>
+                              <h4 className="font-bold text-white text-sm">Create Feature Branch & Switch</h4>
+                            </div>
+                            <button
+                              onClick={async () => {
+                                setDemoStepStatus(s => ({ ...s, step2: "running" }));
+                                try {
+                                  await fetch(`${API_BASE}/api/branch/create`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ name: "feature/divide" })
+                                  });
+                                } catch (_) {}
+                                await handleCheckout("feature/divide");
+                                setDemoStepStatus(s => ({ ...s, step2: "done" }));
+                              }}
+                              disabled={loading}
+                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded text-xs transition"
+                            >
+                              {demoStepStatus.step2 === "done" ? "✓ Re-run Step 2" : "Run Step 2 (Branch)"}
+                            </button>
+                          </div>
+                          <p className="text-gray-400">
+                            Executes <code>chronogit branch feature/divide</code> and <code>chronogit checkout feature/divide</code>. Updates <code>.chronogit/HEAD</code> symbolic reference and verifies uncommitted work safety.
+                          </p>
+                        </div>
+
+                        {/* Step 3 */}
+                        <div className="p-4 bg-[#0d1117] border border-[#30363d] rounded-lg space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-xs">3</span>
+                              <h4 className="font-bold text-white text-sm">Implement Feature & Commit on Branch</h4>
+                            </div>
+                            <button
+                              onClick={async () => {
+                                setDemoStepStatus(s => ({ ...s, step3: "running" }));
+                                await fetch(`${API_BASE}/api/files/write`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    path: "calculator.py",
+                                    content: "def add(a, b):\n    return a + b\n\ndef divide(a, b):\n    if b == 0: raise ValueError('Division by zero')\n    return a / b\n"
+                                  })
+                                });
+                                await handleStage(["calculator.py"]);
+                                await fetch(`${API_BASE}/api/commit`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ message: "feat(calc): implement safe divide function", author_name: "Feature Dev", author_email: "dev@chronogit.local" })
+                                });
+                                showNotice("Committed divide feature on branch 'feature/divide'.");
+                                setDemoStepStatus(s => ({ ...s, step3: "done" }));
+                                await fetchAllData();
+                              }}
+                              disabled={loading}
+                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded text-xs transition"
+                            >
+                              {demoStepStatus.step3 === "done" ? "✓ Re-run Step 3" : "Run Step 3 (Feature Commit)"}
+                            </button>
+                          </div>
+                          <p className="text-gray-400">
+                            Appends <code>divide()</code> to <code>calculator.py</code>, stages into index, creates a new Blob, subtrees, and advances the <code>feature/divide</code> branch pointer.
+                          </p>
+                        </div>
+
+                        {/* Step 4 */}
+                        <div className="p-4 bg-[#0d1117] border border-[#30363d] rounded-lg space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-xs">4</span>
+                              <h4 className="font-bold text-white text-sm">Switch to Main & Create Parallel Edit</h4>
+                            </div>
+                            <button
+                              onClick={async () => {
+                                setDemoStepStatus(s => ({ ...s, step4: "running" }));
+                                await handleCheckout("main");
+                                await fetch(`${API_BASE}/api/files/write`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    path: "README.md",
+                                    content: "# ChronoGit Project Demo\nDemonstrating C++20 CAS engine with parallel development and 3-way merge.\n\n## Documentation\nAll operations are verified and tested.\n"
+                                  })
+                                });
+                                await handleStage(["README.md"]);
+                                await fetch(`${API_BASE}/api/commit`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ message: "docs: add documentation section on main", author_name: "Core Lead", author_email: "lead@chronogit.local" })
+                                });
+                                showNotice("Committed documentation update on 'main'. Branch histories have now diverged!");
+                                setDemoStepStatus(s => ({ ...s, step4: "done" }));
+                                await fetchAllData();
+                              }}
+                              disabled={loading}
+                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded text-xs transition"
+                            >
+                              {demoStepStatus.step4 === "done" ? "✓ Re-run Step 4" : "Run Step 4 (Mainline Divergence)"}
+                            </button>
+                          </div>
+                          <p className="text-gray-400">
+                            Switches back to <code>main</code>, makes independent commit. The two branches now have non-trivial histories diverging from their common ancestor!
+                          </p>
+                        </div>
+
+                        {/* Step 5 */}
+                        <div className="p-4 bg-[#0d1117] border border-[#30363d] rounded-lg space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-full bg-purple-600 text-white font-bold flex items-center justify-center text-xs">5</span>
+                              <h4 className="font-bold text-white text-sm">Execute Three-Way Merge (diff3)</h4>
+                            </div>
+                            <button
+                              onClick={async () => {
+                                setDemoStepStatus(s => ({ ...s, step5: "running" }));
+                                const res = await fetch(`${API_BASE}/api/merge`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ branch: "feature/divide", abort: false })
+                                });
+                                const json = await res.json();
+                                showNotice("Merge result: " + (json.output || "Clean 3-way merge completed!"));
+                                setDemoStepStatus(s => ({ ...s, step5: "done" }));
+                                await fetchAllData();
+                              }}
+                              disabled={loading}
+                              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded text-xs transition"
+                            >
+                              {demoStepStatus.step5 === "done" ? "✓ Re-run Step 5" : "Run Step 5 (3-Way Merge)"}
+                            </button>
+                          </div>
+                          <p className="text-gray-400">
+                            Finds Lowest Common Ancestor (LCA) in commit DAG, applies non-overlapping changes from <code>feature/divide</code>, stages merged files, and records a two-parent merge commit.
+                          </p>
+                        </div>
+
+                        {/* Step 6 */}
+                        <div className="p-4 bg-[#0d1117] border border-[#30363d] rounded-lg space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-xs">6</span>
+                              <h4 className="font-bold text-white text-sm">Verify Repository Integrity (fsck) & GC</h4>
+                            </div>
+                            <button
+                              onClick={async () => {
+                                setDemoStepStatus(s => ({ ...s, step6: "running" }));
+                                await handleRunFsck();
+                                await handleRunGc(true);
+                                setDemoStepStatus(s => ({ ...s, step6: "done" }));
+                              }}
+                              disabled={loading}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded text-xs transition"
+                            >
+                              {demoStepStatus.step6 === "done" ? "✓ Re-run Step 6" : "Run Step 6 (FSCK & GC)"}
+                            </button>
+                          </div>
+                          <p className="text-gray-400">
+                            Scans all objects in <code>.chronogit/objects</code>, recalculates SHA-256 digests over uncompressed payloads, verifies tree entry connectivity, and performs mark-and-sweep reachability check.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SUBTAB 2: ENGINE ARCHITECTURE & OBJECT MODEL */}
+                  {docsSubTab === "architecture" && (
+                    <div className="space-y-6 text-xs">
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="p-4 bg-[#0d1117] border border-[#30363d] rounded-lg space-y-2">
+                          <div className="font-bold text-sm text-indigo-300 flex items-center gap-1.5">
+                            <span>📄 Blob Object</span>
+                          </div>
+                          <p className="text-gray-400 leading-relaxed">
+                            Stores raw file content bytes. Completely independent of filename or file permissions. Two identical files anywhere in the repo share a single Blob.
+                          </p>
+                          <div className="font-mono text-[11px] bg-black/40 p-2 rounded text-gray-300">
+                            blob &lt;size&gt;\0&lt;file_bytes&gt;
+                          </div>
+                        </div>
+
+                        <div className="p-4 bg-[#0d1117] border border-[#30363d] rounded-lg space-y-2">
+                          <div className="font-bold text-sm text-emerald-300 flex items-center gap-1.5">
+                            <span>📁 Tree Object</span>
+                          </div>
+                          <p className="text-gray-400 leading-relaxed">
+                            Represents a directory node. Contains sorted list of entries mapping modes and names to Blob hashes or child Tree hashes.
+                          </p>
+                          <div className="font-mono text-[11px] bg-black/40 p-2 rounded text-gray-300">
+                            100644 blob &lt;sha&gt; main.cpp<br/>
+                            040000 tree &lt;sha&gt; src
+                          </div>
+                        </div>
+
+                        <div className="p-4 bg-[#0d1117] border border-[#30363d] rounded-lg space-y-2">
+                          <div className="font-bold text-sm text-purple-300 flex items-center gap-1.5">
+                            <span>📦 Commit Object</span>
+                          </div>
+                          <p className="text-gray-400 leading-relaxed">
+                            Snapshot node in the DAG. Points to root tree, zero or more parent commit hashes, author/committer signature with timestamp, and message.
+                          </p>
+                          <div className="font-mono text-[11px] bg-black/40 p-2 rounded text-gray-300">
+                            tree &lt;sha&gt;<br/>
+                            parent &lt;sha&gt;<br/>
+                            author ...
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-5 bg-[#0d1117] border border-[#30363d] rounded-lg space-y-3">
+                        <h4 className="font-bold text-sm text-white">Content-Addressable Storage (CAS) & Built-in LZ77 Compression</h4>
+                        <p className="text-gray-300 leading-relaxed">
+                          ChronoGit implements deterministic content hashing where any object's 64-character address is:
+                        </p>
+                        <div className="font-mono text-xs bg-black/50 p-3 rounded border border-[#30363d] text-cyan-300">
+                          ObjectId = SHA-256( "&lt;type&gt; &lt;size&gt;\0" + payload_bytes )
+                        </div>
+                        <p className="text-gray-400 leading-relaxed">
+                          Objects are compressed on disk with ChronoGit's high-speed LZ77 compressor (<code>CGZ1</code> magic token). Sharding into 2-character prefix directories (<code>.chronogit/objects/ab/cdef...</code>) prevents filesystem slowdowns. Writing identical file contents or unchanged subtrees is deduplicated in O(1) time without rewriting.
+                        </p>
+                      </div>
+
+                      <div className="p-5 bg-[#0d1117] border border-[#30363d] rounded-lg space-y-3">
+                        <h4 className="font-bold text-sm text-white">Three-Way Merge Reconciliation Matrix</h4>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left font-mono border border-[#30363d] rounded">
+                            <thead className="bg-black/40 text-gray-400">
+                              <tr>
+                                <th className="p-2 border-b border-[#30363d]">Base (LCA)</th>
+                                <th className="p-2 border-b border-[#30363d]">Ours (HEAD)</th>
+                                <th className="p-2 border-b border-[#30363d]">Theirs (Target)</th>
+                                <th className="p-2 border-b border-[#30363d]">Reconciliation Outcome</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[#30363d] text-[11px]">
+                              <tr>
+                                <td className="p-2">Content B</td>
+                                <td className="p-2 text-gray-400">B (unchanged)</td>
+                                <td className="p-2 text-indigo-400">B' (modified)</td>
+                                <td className="p-2 text-emerald-400 font-bold">Auto-accept Theirs (Clean)</td>
+                              </tr>
+                              <tr>
+                                <td className="p-2">Content B</td>
+                                <td className="p-2 text-emerald-400">B' (modified)</td>
+                                <td className="p-2 text-gray-400">B (unchanged)</td>
+                                <td className="p-2 text-emerald-400 font-bold">Keep Ours (Clean)</td>
+                              </tr>
+                              <tr>
+                                <td className="p-2">Content B</td>
+                                <td className="p-2 text-indigo-400">B_ours</td>
+                                <td className="p-2 text-indigo-400">B_theirs</td>
+                                <td className="p-2 text-yellow-400 font-bold">Line diff3 merge (Markers on conflict)</td>
+                              </tr>
+                              <tr>
+                                <td className="p-2">Content B</td>
+                                <td className="p-2 text-red-400">Deleted</td>
+                                <td className="p-2 text-indigo-400">B' (modified)</td>
+                                <td className="p-2 text-red-400 font-bold">Delete/Modify Conflict (User resolution required)</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SUBTAB 3: CLI CHEAT SHEET */}
+                  {docsSubTab === "cli" && (
+                    <div className="space-y-4 text-xs">
+                      <div className="p-3 bg-[#0d1117] border border-[#30363d] rounded text-gray-300">
+                        ChronoGit's C++20 CLI binary is located at <code>build/chronogit.exe</code>. Below is the command reference:
+                      </div>
+
+                      <div className="space-y-2">
+                        {[
+                          { cmd: "chronogit init [-b <branch>] [<dir>]", desc: "Initializes an empty repository with .chronogit/ structure, default branch HEAD, and config." },
+                          { cmd: "chronogit add <pathspec>...", desc: "Stages file contents or directories recursively into the index, computing Blobs." },
+                          { cmd: "chronogit commit -m <msg> [--author ...]", desc: "Constructs hierarchical trees from index, writes Commit object, and updates branch ref." },
+                          { cmd: "chronogit status", desc: "Displays current branch, staged changes, unstaged modifications, and untracked files." },
+                          { cmd: "chronogit log [--oneline] [--graph] [-n N]", desc: "Traverses DAG backwards, displaying commits, authors, dates, and ASCII branch graph." },
+                          { cmd: "chronogit branch [<name>] [-d <name>]", desc: "Lists all local branches, marks active branch with '*', or creates/deletes branch refs." },
+                          { cmd: "chronogit checkout [-b <name>] <target>", desc: "Switches branches or inspects detached commit; protects uncommitted local changes." },
+                          { cmd: "chronogit diff [--staged] [<c1>] [<c2>]", desc: "Computes line-level Myers diff with unified hunks (worktree vs index, or staged vs HEAD)." },
+                          { cmd: "chronogit merge <branch> [--abort]", desc: "Computes Lowest Common Ancestor (LCA) and executes 3-way merge with conflict markers." },
+                          { cmd: "chronogit show [<object>]", desc: "Inspects metadata and contents of any object (commit diff, tree list, or blob text)." },
+                          { cmd: "chronogit fsck [--full]", desc: "Verifies SHA-256 integrity of all stored objects and detects missing or corrupted files." },
+                          { cmd: "chronogit gc [--dry-run]", desc: "Executes mark-and-sweep reachability analysis to purge unreferenced objects." },
+                          { cmd: "chronogit export-graph [<out.json>]", desc: "Exports complete commit DAG to JSON for web visualizer." },
+                        ].map((c, i) => (
+                          <div key={i} className="p-3 bg-[#0d1117] border border-[#30363d] rounded-lg flex flex-col gap-1">
+                            <span className="font-mono text-indigo-400 font-bold text-xs">{c.cmd}</span>
+                            <span className="text-gray-400 text-[11px]">{c.desc}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SUBTAB 4: LIVE REST API EXPLORER */}
+                  {docsSubTab === "api" && (
+                    <div className="space-y-6 text-xs">
+                      <div className="p-3 bg-[#0d1117] border border-[#30363d] rounded text-gray-300">
+                        FastAPI backend runs on <code>http://localhost:8000</code>. Click <strong>Test Request</strong> on any endpoint to execute a real query and inspect live JSON responses:
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Endpoint List */}
+                        <div className="space-y-2">
+                          {[
+                            { method: "GET", path: "/api/health", desc: "System health check & C++ engine status" },
+                            { method: "POST", path: "/api/demo/setup", desc: "Initialize sample repository & DAG" },
+                            { method: "GET", path: "/api/status", desc: "Get working tree and staged index status" },
+                            { method: "GET", path: "/api/log", desc: "Retrieve DAG commit graph in JSON format" },
+                            { method: "GET", path: "/api/branches", desc: "List all repository branches and current ref" },
+                            { method: "GET", path: "/api/diff?staged=false", desc: "Get unstaged working tree diff" },
+                            { method: "GET", path: "/api/fsck", desc: "Run repository SHA-256 integrity check" },
+                            { method: "GET", path: "/api/benchmarks", desc: "Retrieve measured performance benchmarks" },
+                          ].map(ep => (
+                            <div key={ep.path} className="p-2.5 bg-[#0d1117] border border-[#30363d] rounded flex items-center justify-between">
+                              <div>
+                                <span className="font-mono font-bold text-[10px] px-1.5 py-0.5 rounded bg-indigo-900/60 text-indigo-300 mr-2">
+                                  {ep.method}
+                                </span>
+                                <span className="font-mono text-gray-200 text-xs">{ep.path}</span>
+                                <div className="text-[10px] text-gray-400 mt-0.5">{ep.desc}</div>
+                              </div>
+                              <button
+                                onClick={() => testApiEndpoint(ep.method, ep.path)}
+                                disabled={apiTestingEndpoint !== null}
+                                className="px-2.5 py-1 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-white rounded text-[10px] font-semibold transition"
+                              >
+                                Test Request
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Response Console */}
+                        <div className="bg-[#0d1117] border border-[#30363d] rounded-lg p-4 flex flex-col">
+                          <div className="flex items-center justify-between border-b border-[#30363d] pb-2 mb-2 font-mono text-[11px]">
+                            <span className="text-gray-400">Response Inspector</span>
+                            {apiTestResponse && (
+                              <span className="text-indigo-400 font-bold">
+                                {apiTestResponse.path} (HTTP {apiTestResponse.status})
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex-1 overflow-auto bg-black/50 p-3 rounded font-mono text-[11px] text-gray-300">
+                            {apiTestResponse ? (
+                              apiTestResponse.loading ? (
+                                <span className="text-yellow-400 animate-pulse">Sending request to FastAPI backend...</span>
+                              ) : (
+                                <pre className="whitespace-pre-wrap">{JSON.stringify(apiTestResponse.data || apiTestResponse.error, null, 2)}</pre>
+                              )
+                            ) : (
+                              <span className="text-gray-500 italic">Click 'Test Request' on any API endpoint to view real server output.</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === "benchmarks" && (
+              <div className="flex-1 p-8 max-w-5xl mx-auto space-y-6 overflow-y-auto">
+                <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-6 space-y-5">
+                  <div className="border-b border-[#30363d] pb-3">
+                    <h2 className="text-base font-bold text-white">System Performance & Deduplication Measurements</h2>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Actual measurements executed on the native C++20 engine comparing raw full-copy snapshots against ChronoGit CAS.
+                    </p>
+                  </div>
+
+                  {benchmarks.length > 0 ? (
+                    <div className="space-y-6 text-xs">
+                      {/* Speed Table */}
+                      <div>
+                        <h3 className="font-bold text-white mb-2">Operation Latency Across Scales</h3>
+                        <div className="overflow-x-auto border border-[#30363d] rounded-lg">
+                          <table className="w-full text-left font-mono">
+                            <thead className="bg-[#0d1117] text-gray-400 border-b border-[#30363d]">
+                              <tr>
+                                <th className="p-2.5">Files</th>
+                                <th className="p-2.5">Init Snapshot</th>
+                                <th className="p-2.5">Incr Commit</th>
+                                <th className="p-2.5">Diff Time</th>
+                                <th className="p-2.5">Checkout</th>
+                                <th className="p-2.5">3-Way Merge</th>
+                                <th className="p-2.5">DAG Walk</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[#30363d]">
+                              {benchmarks.map(b => (
+                                <tr key={b.file_count} className="hover:bg-[#21262d]/40">
+                                  <td className="p-2.5 font-bold text-white">{b.file_count}</td>
+                                  <td className="p-2.5 text-indigo-300">{Math.round(b.initial_commit_ms)} ms</td>
+                                  <td className="p-2.5 text-emerald-300">{Math.round(b.incremental_commit_ms)} ms</td>
+                                  <td className="p-2.5 text-cyan-300">{Math.round(b.diff_ms)} ms</td>
+                                  <td className="p-2.5 text-yellow-300">{Math.round(b.checkout_ms)} ms</td>
+                                  <td className="p-2.5 text-purple-300">{Math.round(b.merge_ms)} ms</td>
+                                  <td className="p-2.5 text-gray-400">{Math.round(b.history_traversal_ms * 1000)} µs</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Storage Savings Table */}
+                      <div>
+                        <h3 className="font-bold text-white mb-2">Storage Overhead & Deduplication Savings</h3>
+                        <div className="overflow-x-auto border border-[#30363d] rounded-lg">
+                          <table className="w-full text-left font-mono">
+                            <thead className="bg-[#0d1117] text-gray-400 border-b border-[#30363d]">
+                              <tr>
+                                <th className="p-2.5">Files</th>
+                                <th className="p-2.5">Full-Copy (3 Commits)</th>
+                                <th className="p-2.5">ChronoGit CAS</th>
+                                <th className="p-2.5 text-emerald-400">Total Space Saved</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[#30363d]">
+                              {benchmarks.map(b => (
+                                <tr key={b.file_count} className="hover:bg-[#21262d]/40">
+                                  <td className="p-2.5 font-bold text-white">{b.file_count}</td>
+                                  <td className="p-2.5 text-gray-400">{(b.full_copy_bytes / 1024).toFixed(1)} KiB</td>
+                                  <td className="p-2.5 text-indigo-300">{(b.cas_storage_bytes / 1024).toFixed(1)} KiB</td>
+                                  <td className="p-2.5 font-bold text-emerald-400">{b.deduplication_savings_pct.toFixed(1)}%</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-gray-500 italic text-xs">Run 'chronogit_benchmark' to populate benchmark results.</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById("root"));
+  </script>
+</body>
+</html>
